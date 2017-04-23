@@ -25,12 +25,18 @@ using namespace cv;
 const int H_MIN = 0, H_MAX = 500;
 const int S_MIN = 0, S_MAX = 500;
 const int V_MIN = 0, V_MAX = 500;
+//int H_MIN_val = 0;
+//int H_MAX_val = 17;
+//int S_MIN_val = 55;
+//int S_MAX_val = 175;
+//int V_MIN_val = 75;
+//int V_MAX_val = 400;
 int H_MIN_val = 0;
-int H_MAX_val = 17;
-int S_MIN_val = 55;
-int S_MAX_val = 175;
-int V_MIN_val = 75;
-int V_MAX_val = 400;
+int H_MAX_val = 130;
+int S_MIN_val = 0;
+int S_MAX_val = 151;
+int V_MIN_val = 65;
+int V_MAX_val = 329;
 
 int msPerFrame = 30;
 // 12,74,14,95,132,202
@@ -319,7 +325,7 @@ int main() {
 	
 
 	////create slider bars for HSV filtering
-	//createTrackbars();
+	createTrackbars();
 
 	// load(a); -> 這行的作用是....? 好像是用machine learning的方式來進行物體辨識(需載入xml檔)
 	openCam(camera);	// 打開照相機
@@ -338,14 +344,16 @@ int main() {
 		}
 		if (frame.empty())
 			break;
+
 		/* 想法: 
-			1. 色彩辨識(Origin frame轉HSV，然後HSV再經過filter(inRange)轉binary)
-			2. 形狀辨識(background subtraction)，用演算法判斷背景與主體，將背景去掉只留下主體的binary
-			運用上面兩者所產生的threshold來取
+			1. 色彩辨識: Origin frame轉HSV，然後HSV再經過filter(inRange)選取接近皮膚的顏色，然後轉binary
+			2. 形狀辨識(background subtraction): 用演算法判斷背景與主體，將背景去掉只留下主體的binary
+			運用上面兩者所產生的threshold取交集來留下手的部分(不過目前還是會連同臉一起讀進去...)
 		(原本是想用機器學習(haar cascade)來辨識，不過訓練失敗...，而且用內建的臉部辨識跑過，很耗CPU資源，暫不考慮)
 		
 		*/
-		// 1. 
+
+		// 1. 形狀辨識(background subtraction)
 		// 先對所讀取到的影像進行去背處理
 		//option 
 		blur(frame, RoiFrame, Size(3, 3));
@@ -366,9 +374,9 @@ int main() {
 		//Background Image get
 		MOG2->getBackgroundImage(BackImg);
 
-		//morphology 
-		morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_DILATE, element);
-		//Binary
+		//morphology: 對Mog_Mask進行運算(CV_MOP_DILATE: 侵蝕)
+		morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_OPEN, element);
+		//Binary: 尚須確認這在做什麼...
 		threshold(Mog_Mask_morpho, Mog_Mask_morpho_threshold, 128, 255, CV_THRESH_BINARY);
 
 		//// 先對所讀取到的影像進行去背處理(old version)
@@ -398,7 +406,10 @@ int main() {
 		//		cv::imshow(backgroundWindowName, bgMOG2Img);
 		//}
 		
-		// 2. 色彩辨識法: 運用辨識皮膚顏色的方式，
+
+
+
+		// 2. 色彩辨識法: 運用辨識皮膚顏色的方式來產生threshold
 		// 影像的轉換(->HSV->threshold matrix->contour detection->convex hull)，方便辨識
 		// convert frame from BGR to HSV colorspace
 		Mat HSVFrame;
@@ -409,6 +420,12 @@ int main() {
 		int blurSize = 5;
 		int elementSize = 5;
 		medianBlur(thresholdFrame, thresholdFrame, blurSize);
+		// morphology
+		morphologyEx(thresholdFrame, thresholdFrame, CV_MOP_OPEN, Mat());
+
+		// 最後將兩者結果取交集
+		Mat combinedThreshold;
+		bitwise_and(Mog_Mask_morpho_threshold, thresholdFrame, combinedThreshold);
 
 
 		// Contour detection(red edge)
@@ -416,24 +433,21 @@ int main() {
 		vector<vector<Point> > contours;
 		vector<Vec4i> hierarchy;
 
-		findContours(Mog_Mask_morpho_threshold, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+		findContours(combinedThreshold, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
 		size_t largestContour = 0;
-		for (size_t i = 1; i < contours.size(); i++)
-		{
+		for (size_t i = 1; i < contours.size(); i++) {
 			if (contourArea(contours[i]) > contourArea(contours[largestContour]))
 				largestContour = i;
 		}
 		drawContours(frame, contours, largestContour, cv::Scalar(0, 0, 255), 1);
 
 		// Convex hull(convex-set edge)
-		if (!contours.empty())
-		{
+		if (!contours.empty()) {
 			std::vector<std::vector<cv::Point> > hull(1);
 			cv::convexHull(cv::Mat(contours[largestContour]), hull[0], false);
 			cv::drawContours(frame, hull, 0, cv::Scalar(255, 130, 30), 3);
 			// 根據convex set與contour之間的空隙來畫出convex defect(是這樣子稱呼嗎@@?)
-			if (hull[0].size() > 2)
-			{
+			if (hull[0].size() > 2) {
 				std::vector<int> hullIndexes;
 				cv::convexHull(cv::Mat(contours[largestContour]), hullIndexes, true);
 				std::vector<cv::Vec4i> convexityDefects;
@@ -467,11 +481,14 @@ int main() {
 
 		// 最後秀出各階段處理的結果
 		imshow(cameraWindowName, frame);
-		imshow("ROI", RoiFrame);
+		//imshow("ROI", RoiFrame);
 		imshow("MogMask", Mog_Mask);
 		imshow("BackImg", BackImg);
-		imshow("Morpho", Mog_Mask_morpho);
+		//imshow("Morpho", Mog_Mask_morpho);
 		imshow("Morpho Threshold", Mog_Mask_morpho_threshold);
+		imshow(HSVWindowName, HSVFrame);
+		imshow("Color Method Threshold", thresholdFrame);
+		imshow("Combined Threshold", combinedThreshold);
 
 		//// Use morph (erode and dilate the thresholdFrame)
 		//morphOps(thresholdFrame);
