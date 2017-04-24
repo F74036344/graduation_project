@@ -22,21 +22,22 @@ using namespace cv;
 
 //initial min and max HSV filter values.
 //these will be changed using trackbars
-const int H_MIN = 0, H_MAX = 500;
-const int S_MIN = 0, S_MAX = 500;
-const int V_MIN = 0, V_MAX = 500;
+const int H_MIN = 0, H_MAX = 255;
+const int S_MIN = 0, S_MAX = 255;
+const int V_MIN = 0, V_MAX = 255;
 //int H_MIN_val = 0;
 //int H_MAX_val = 17;
 //int S_MIN_val = 55;
 //int S_MAX_val = 175;
 //int V_MIN_val = 75;
 //int V_MAX_val = 400;
+//根據網路上查到的HSV膚色範圍: 0 < H < 50； 0.23 < S < 0.68 (跟Hue有較大的關係)
 int H_MIN_val = 0;
-int H_MAX_val = 130;
-int S_MIN_val = 0;
-int S_MAX_val = 151;
-int V_MIN_val = 65;
-int V_MAX_val = 329;
+int H_MAX_val = 35;
+int S_MIN_val = 58;
+int S_MAX_val = 174;
+int V_MIN_val = 40;
+int V_MAX_val = 255;
 
 int msPerFrame = 30;
 // 12,74,14,95,132,202
@@ -60,6 +61,9 @@ const string trackbarWindowName = "Trackbars";
 
 // 用來output點數的output file
 ofstream outputfile;
+
+// 用來進行去背處理的variable(定義在global，以讓function存取)
+Ptr<BackgroundSubtractorMOG2> MOG2;
 
 
 void openCam(VideoCapture &camera)
@@ -243,92 +247,131 @@ float innerAngle(float px1, float py1, float px2, float py2, float cx1, float cy
 	return A;
 }
 
+void backgroundSubtraction(const Mat& inputFrame, Mat& outputFrame) {
+	// 1. 形狀辨識(background subtraction)
+	// 先對所讀取到的影像進行去背處理
+	Mat RoiFrame;
+	Mat Mog_Mask, Mog_Mask_morpho, Mog_Mask_morpho_threshold;
+	Mat backImg;
+
+	blur(inputFrame, RoiFrame, Size(3, 3));
+	//GaussianBlur(frame, RoiFrame, Size(9, 9), 0, 0);
+	// Rect roi(100, 100, 300, 300);
+	//RoiFrame = frame(roi);
+
+	//Mog processing
+	MOG2->apply(RoiFrame, Mog_Mask);
+
+	//Background Image get
+	MOG2->getBackgroundImage(backImg);
+
+	Mat element = getStructuringElement(MORPH_RECT, Size(9, 9), Point(4, 4));
+	//morphology: 對Mog_Mask進行運算(CV_MOP_OPEN: erode侵蝕+dilate膨脹 )
+	morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_OPEN, element);
+	//Binary: 尚須確認這在做什麼...
+	threshold(Mog_Mask_morpho, Mog_Mask_morpho_threshold, 128, 255, CV_THRESH_BINARY);
+
+	//imshow("ROI", RoiFrame);
+	imshow("MogMask", Mog_Mask);
+	imshow("BackImg", backImg);
+	outputFrame = Mog_Mask_morpho_threshold.clone();
+
+	//// 先對所讀取到的影像進行去背處理(old version)
+	//// Grab the next camera frame.
+	//Mat frame;
+	//Mat fgMOG2MaskImg, fgMOG2Img, bgMOG2Img;	// fgMOG2MaskImg: 計算後的背景影像；fgMOG2Img: 當下擷取的影像
+	//Mat HSVFrame;
+	//Mat thresholdFrame;
+	//{
+	//	int history = 500;
+	//	double varThreshold = 16;
+	//	bool detectShadows = true;
+	//	cv::Ptr<cv::BackgroundSubtractor> pMOG2;
+	//	pMOG2 = cv::createBackgroundSubtractorMOG2(history, varThreshold, detectShadows);
+	//	bool update_bg_model = true;
+	//	if (fgMOG2Img.empty())
+	//		fgMOG2Img.create(frame.size(), frame.type());
+	//	// update the model
+	//	pMOG2->apply(frame, fgMOG2MaskImg, update_bg_model ? -1 : 0);
+	//	fgMOG2Img = cv::Scalar::all(0);
+	//	frame.copyTo(fgMOG2Img, fgMOG2MaskImg);
+
+	//	pMOG2->getBackgroundImage(bgMOG2Img);
+	//	cv::imshow(foregroundMaskWindowName, fgMOG2MaskImg);
+	//	cv::imshow(foregroundWindowName, fgMOG2Img);
+	//	if (!bgMOG2Img.empty())
+	//		cv::imshow(backgroundWindowName, bgMOG2Img);
+	//}
+}
+
+void extractSkinArea(const Mat& inputFrame, Mat& outputFrame) {
+
+	// 有兩種方式可以進行顏色區段篩選
+	// 1. HSV膚色範圍: 0 < H < 50； 0.23 < S < 0.68
+	// HSV在面對強光時好像會讀不太到?
+	Mat hsv_img, hsv_skin_threshold_img;
+	cvtColor(inputFrame, hsv_img, COLOR_BGR2HSV);
+	inRange(hsv_img, Scalar(0, 58, 40), Scalar(35, 174, 255), hsv_skin_threshold_img);
+	// morphology
+	morphologyEx(hsv_skin_threshold_img, hsv_skin_threshold_img, CV_MOP_OPEN, Mat());
+	imshow("HSV", hsv_img);
+	imshow("HSV Skin Threshold", hsv_skin_threshold_img);
+
+	// 2. YCrCb膚色範圍: 135 < Cr < 180； 85 < Cb < 135； Y>80
+	Mat ycrcb_img, ycrcb_skin_threshold_img;
+	cvtColor(inputFrame, ycrcb_img, COLOR_BGR2YCrCb);
+	inRange(ycrcb_img, Scalar(80, 135, 85), Scalar(255, 180, 135), ycrcb_skin_threshold_img);
+	// morphology
+	morphologyEx(ycrcb_skin_threshold_img, ycrcb_skin_threshold_img, CV_MOP_OPEN, Mat());
+
+	imshow("YCrCb", ycrcb_img);
+	imshow("YCrCb Skin Threshold", ycrcb_skin_threshold_img);
+
+	// 兩種方法取交集
+	Mat resultSkinBin;
+	bitwise_and(hsv_skin_threshold_img, ycrcb_skin_threshold_img, resultSkinBin);
+	// Morphology(open運算 = erode運算 + dilate運算)
+	morphologyEx(resultSkinBin, resultSkinBin, CV_MOP_OPEN, Mat());
+	morphologyEx(resultSkinBin, resultSkinBin, CV_MOP_DILATE, Mat());
+
+	outputFrame = resultSkinBin.clone();
+
+	// Show the results:
+	// imshow("Result", resultSkinBin);
+	// convert frame from BGR to HSV colorspace
+
+	//// Old version
+	//Mat HSVFrame;
+	//Mat thresholdFrame;
+	//cvtColor(inputFrame, HSVFrame, COLOR_BGR2HSV);
+	//// 對HSVFrame進行顏色區段篩選
+	//inRange(HSVFrame, Scalar(H_MIN_val, S_MIN_val, V_MIN_val), Scalar(H_MAX_val, S_MAX_val, V_MAX_val), thresholdFrame);
+	//int blurSize = 5;
+	//int elementSize = 5;
+	//medianBlur(thresholdFrame, thresholdFrame, blurSize);
+	//// morphology
+	//morphologyEx(thresholdFrame, thresholdFrame, CV_MOP_OPEN, Mat());
+
+	//imshow(HSVWindowName, HSVFrame);
+	//outputFrame = thresholdFrame.clone();
+}
+
 int main() {
 
-	/* --- 網路上的去背景的code --- */
-	//VideoCapture cap(0); // open the default camera
-	//if (!cap.isOpened()) // check if we succeeded
-	//	return -1;
-
-
-	//for (;;)
-	//{
-
-	//	cap >> frame; // get a new frame from camera
-	//	if (frame.empty())
-	//		break;
-
-	//	//option 
-	//	blur(frame(roi), RoiFrame, Size(3, 3));
-	//	//RoiFrame = frame(roi);
-
-	//	//Mog processing
-	//	MOG2->apply(RoiFrame, Mog_Mask);
-
-	//	if (LearningTime < 300)
-	//	{
-	//		LearningTime++;
-	//		printf("background learning %d \n", LearningTime);
-	//	}
-	//	else
-	//		LearningTime = 301;
-
-	//	//Background Image get
-	//	MOG2->getBackgroundImage(BackImg);
-
-	//	//morphology 
-	//	morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_DILATE, element);
-	//	//Binary
-	//	threshold(Mog_Mask_morpho, Mog_Mask_morpho, 128, 255, CV_THRESH_BINARY);
-
-	//	imshow("Origin", frame);
-	//	imshow("ROI", RoiFrame);
-	//	imshow("MogMask", Mog_Mask);
-	//	imshow("BackImg", BackImg);
-	//	imshow("Morpho", Mog_Mask_morpho);
-	//}
-	/* --- END of 網路上的去背景的code --- */
+	VideoCapture camera;
+	Mat frame;
 	
 	// 開檔，用來寫入手勢的點數
 	outputfile.open("data.txt");
-
-	CascadeClassifier a;	// 
-	VideoCapture camera;
-	namedWindow(cameraWindowName, CV_WINDOW_AUTOSIZE);
-	//namedWindow(HSVWindowName, CV_WINDOW_AUTOSIZE);
-	//namedWindow(thresholdWindowName, CV_WINDOW_AUTOSIZE);
-	//namedWindow(foregroundWindowName, CV_WINDOW_AUTOSIZE);
-	//namedWindow(foregroundMaskWindowName, CV_WINDOW_AUTOSIZE);
-	//namedWindow(backgroundWindowName, CV_WINDOW_AUTOSIZE);
-
-	// 用來進行去背處理的variable
-	Ptr<BackgroundSubtractorMOG2> MOG2 = createBackgroundSubtractorMOG2(3000, 64);
-	//Options
-	//MOG2->setHistory(3000);
-	//MOG2->setVarThreshold(128);
-	MOG2->setDetectShadows(false); //shadow detection on/off
-	Mat Mog_Mask;
-	Mat Mog_Mask_morpho;
-	Mat Mog_Mask_morpho_threshold;
-
-	// Rect roi(100, 100, 300, 300);
-
-	namedWindow("ROI", CV_WINDOW_AUTOSIZE);
-	Mat frame;
-	Mat RoiFrame;
-	Mat BackImg;
-
-	int LearningTime = 0; //300;
-
-	Mat element;
-	element = getStructuringElement(MORPH_RECT, Size(9, 9), Point(4, 4));
-	
-
-	////create slider bars for HSV filtering
-	createTrackbars();
+	//create slider bars for HSV filtering
+	// 這個是一開始用來測試數值用的，現在已經有找到不錯的數據所以暫時用不到了
+	// createTrackbars();
 
 	// load(a); -> 這行的作用是....? 好像是用machine learning的方式來進行物體辨識(需載入xml檔)
 	openCam(camera);	// 打開照相機
+
+	// 產生去背景物件
+	MOG2 = createBackgroundSubtractorMOG2(600, 64, false);
 
 	// Infinite loop to acquire video frame continuously
 	while (true)
@@ -337,14 +380,10 @@ int main() {
 		int x = 0, y = 0;
 
 		// 將camera的影像存至frame
-		if ( !camera.read(frame) )
-		{
+		if ( !camera.read(frame) || frame.empty() ) {
 			std::cerr << "ERROR: Couldn't grab a camera frame." << std::endl;
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
-		if (frame.empty())
-			break;
-
 		/* 想法: 
 			1. 色彩辨識: Origin frame轉HSV，然後HSV再經過filter(inRange)選取接近皮膚的顏色，然後轉binary
 			2. 形狀辨識(background subtraction): 用演算法判斷背景與主體，將背景去掉只留下主體的binary
@@ -353,81 +392,26 @@ int main() {
 		
 		*/
 
-		// 1. 形狀辨識(background subtraction)
-		// 先對所讀取到的影像進行去背處理
-		//option 
-		blur(frame, RoiFrame, Size(3, 3));
-		//GaussianBlur(frame, RoiFrame, Size(9, 9), 0, 0);
-		//RoiFrame = frame(roi);
-
-		//Mog processing
-		MOG2->apply(RoiFrame, Mog_Mask);
-
-		if (LearningTime < 300)
-		{
-			LearningTime++;
-			printf("background learning %d \n", LearningTime);
-		}
-		else
-			LearningTime = 301;
-
-		//Background Image get
-		MOG2->getBackgroundImage(BackImg);
-
-		//morphology: 對Mog_Mask進行運算(CV_MOP_DILATE: 侵蝕)
-		morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_OPEN, element);
-		//Binary: 尚須確認這在做什麼...
-		threshold(Mog_Mask_morpho, Mog_Mask_morpho_threshold, 128, 255, CV_THRESH_BINARY);
-
-		//// 先對所讀取到的影像進行去背處理(old version)
-		//// Grab the next camera frame.
-		//Mat frame;
-		//Mat fgMOG2MaskImg, fgMOG2Img, bgMOG2Img;	// fgMOG2MaskImg: 計算後的背景影像；fgMOG2Img: 當下擷取的影像
-		//Mat HSVFrame;
-		//Mat thresholdFrame;
-		//{
-		//	int history = 500;
-		//	double varThreshold = 16;
-		//	bool detectShadows = true;
-		//	cv::Ptr<cv::BackgroundSubtractor> pMOG2;
-		//	pMOG2 = cv::createBackgroundSubtractorMOG2(history, varThreshold, detectShadows);
-		//	bool update_bg_model = true;
-		//	if (fgMOG2Img.empty())
-		//		fgMOG2Img.create(frame.size(), frame.type());
-		//	// update the model
-		//	pMOG2->apply(frame, fgMOG2MaskImg, update_bg_model ? -1 : 0);
-		//	fgMOG2Img = cv::Scalar::all(0);
-		//	frame.copyTo(fgMOG2Img, fgMOG2MaskImg);
-
-		//	pMOG2->getBackgroundImage(bgMOG2Img);
-		//	cv::imshow(foregroundMaskWindowName, fgMOG2MaskImg);
-		//	cv::imshow(foregroundWindowName, fgMOG2Img);
-		//	if (!bgMOG2Img.empty())
-		//		cv::imshow(backgroundWindowName, bgMOG2Img);
-		//}
-		
-
-
+		// 1. Background Subtraction: Use MOG2 approach
+		Mat Mog_Mask_morpho_threshold;
+		backgroundSubtraction(frame, Mog_Mask_morpho_threshold);
+		imshow("Morpho Threshold", Mog_Mask_morpho_threshold);
 
 		// 2. 色彩辨識法: 運用辨識皮膚顏色的方式來產生threshold
 		// 影像的轉換(->HSV->threshold matrix->contour detection->convex hull)，方便辨識
-		// convert frame from BGR to HSV colorspace
-		Mat HSVFrame;
 		Mat thresholdFrame;
-		cvtColor(frame, HSVFrame, COLOR_BGR2HSV);
-		// threshold matrix
-		inRange(HSVFrame, Scalar(H_MIN_val, S_MIN_val, V_MIN_val), Scalar(H_MAX_val, S_MAX_val, V_MAX_val), thresholdFrame);
-		int blurSize = 5;
-		int elementSize = 5;
-		medianBlur(thresholdFrame, thresholdFrame, blurSize);
-		// morphology
-		morphologyEx(thresholdFrame, thresholdFrame, CV_MOP_OPEN, Mat());
+		extractSkinArea(frame, thresholdFrame);
+		imshow("Color Method Threshold", thresholdFrame);
 
 		// 最後將兩者結果取交集
 		Mat combinedThreshold;
-		bitwise_and(Mog_Mask_morpho_threshold, thresholdFrame, combinedThreshold);
+		combinedThreshold = thresholdFrame.clone();
+		// bitwise_not(Mog_Mask_morpho_threshold, Mog_Mask_morpho_threshold);
+		bitwise_or(Mog_Mask_morpho_threshold, thresholdFrame, combinedThreshold);
+		morphologyEx(combinedThreshold, combinedThreshold, CV_MOP_DILATE, Mat());
+		imshow("Combined Threshold", combinedThreshold);
 
-
+		// 接下來要將手的部位標示出來
 		// Contour detection(red edge)
 		Mat edges;
 		vector<vector<Point> > contours;
@@ -479,16 +463,8 @@ int main() {
 			}
 		}
 
-		// 最後秀出各階段處理的結果
+		// 最後秀出處理的結果
 		imshow(cameraWindowName, frame);
-		//imshow("ROI", RoiFrame);
-		imshow("MogMask", Mog_Mask);
-		imshow("BackImg", BackImg);
-		//imshow("Morpho", Mog_Mask_morpho);
-		imshow("Morpho Threshold", Mog_Mask_morpho_threshold);
-		imshow(HSVWindowName, HSVFrame);
-		imshow("Color Method Threshold", thresholdFrame);
-		imshow("Combined Threshold", combinedThreshold);
 
 		//// Use morph (erode and dilate the thresholdFrame)
 		//morphOps(thresholdFrame);
