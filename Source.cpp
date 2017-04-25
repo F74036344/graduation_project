@@ -25,17 +25,17 @@ using namespace cv;
 const int H_MIN = 0, H_MAX = 255;
 const int S_MIN = 0, S_MAX = 255;
 const int V_MIN = 0, V_MAX = 255;
-//int H_MIN_val = 0;
-//int H_MAX_val = 17;
-//int S_MIN_val = 55;
-//int S_MAX_val = 175;
-//int V_MIN_val = 75;
-//int V_MAX_val = 400;
 //根據網路上查到的HSV膚色範圍: 0 < H < 50； 0.23 < S < 0.68 (跟Hue有較大的關係)
+//int H_MIN_val = 0;
+//int H_MAX_val = 70;
+//int S_MIN_val = 58;
+//int S_MAX_val = 174;
+//int V_MIN_val = 40;
+//int V_MAX_val = 255;
 int H_MIN_val = 0;
-int H_MAX_val = 35;
-int S_MIN_val = 58;
-int S_MAX_val = 174;
+int H_MAX_val = 70;
+int S_MIN_val = 0;
+int S_MAX_val = 231;
 int V_MIN_val = 40;
 int V_MAX_val = 255;
 
@@ -49,15 +49,6 @@ const int MAX_NUM_OBJECTS = 50;
 //minimum and maximum object area
 const int MIN_OBJECT_AREA = 15 * 15;
 const int MAX_OBJECT_AREA = FRAME_HEIGHT*FRAME_WIDTH / 1.5;
-//names that will appear at the top of each window
-const string cameraWindowName = "Original";
-const string HSVWindowName = "HSV";
-const string thresholdWindowName = "Threshold";
-const string foregroundWindowName = "Foreground Image";
-const string foregroundMaskWindowName = "Foreground Mask";
-const string backgroundWindowName = "Mean Background Image";
-const string windowName3 = "After Morphological Operations";
-const string trackbarWindowName = "Trackbars";
 
 // 用來output點數的output file
 ofstream outputfile;
@@ -95,7 +86,7 @@ void on_trackbar(int, void*)
 void createTrackbars() {
 	//create window for trackbars
 
-
+	const string trackbarWindowName = "Trackbar Window";
 	namedWindow(trackbarWindowName, 0);
 	//create memory to store trackbar name on window
 	//char TrackbarName[50];
@@ -265,72 +256,52 @@ void backgroundSubtraction(const Mat& inputFrame, Mat& outputFrame) {
 	//Background Image get
 	MOG2->getBackgroundImage(backImg);
 
-	Mat element = getStructuringElement(MORPH_RECT, Size(9, 9), Point(4, 4));
+	Mat element = getStructuringElement(MORPH_RECT, Size(5, 5), Point(4, 4));
 	//morphology: 對Mog_Mask進行運算(CV_MOP_OPEN: erode侵蝕+dilate膨脹 )
-	morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_OPEN, element);
+	morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_OPEN, Mat());
+	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_ERODE, Mat());
+	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_ERODE, Mat());
+	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_DILATE, Mat(), Point(-1,-1), 7);
+
 	//Binary: 尚須確認這在做什麼...
-	threshold(Mog_Mask_morpho, Mog_Mask_morpho_threshold, 128, 255, CV_THRESH_BINARY);
+	threshold(Mog_Mask_morpho, Mog_Mask_morpho_threshold, 10, 255, CV_THRESH_BINARY);
 
 	//imshow("ROI", RoiFrame);
 	imshow("MogMask", Mog_Mask);
 	imshow("BackImg", backImg);
 	outputFrame = Mog_Mask_morpho_threshold.clone();
 
-	//// 先對所讀取到的影像進行去背處理(old version)
-	//// Grab the next camera frame.
-	//Mat frame;
-	//Mat fgMOG2MaskImg, fgMOG2Img, bgMOG2Img;	// fgMOG2MaskImg: 計算後的背景影像；fgMOG2Img: 當下擷取的影像
-	//Mat HSVFrame;
-	//Mat thresholdFrame;
-	//{
-	//	int history = 500;
-	//	double varThreshold = 16;
-	//	bool detectShadows = true;
-	//	cv::Ptr<cv::BackgroundSubtractor> pMOG2;
-	//	pMOG2 = cv::createBackgroundSubtractorMOG2(history, varThreshold, detectShadows);
-	//	bool update_bg_model = true;
-	//	if (fgMOG2Img.empty())
-	//		fgMOG2Img.create(frame.size(), frame.type());
-	//	// update the model
-	//	pMOG2->apply(frame, fgMOG2MaskImg, update_bg_model ? -1 : 0);
-	//	fgMOG2Img = cv::Scalar::all(0);
-	//	frame.copyTo(fgMOG2Img, fgMOG2MaskImg);
-
-	//	pMOG2->getBackgroundImage(bgMOG2Img);
-	//	cv::imshow(foregroundMaskWindowName, fgMOG2MaskImg);
-	//	cv::imshow(foregroundWindowName, fgMOG2Img);
-	//	if (!bgMOG2Img.empty())
-	//		cv::imshow(backgroundWindowName, bgMOG2Img);
-	//}
 }
 
-void extractSkinArea(const Mat& inputFrame, Mat& outputFrame) {
+void extractSkinArea(const Mat& inputFrame, Mat& outputFrame/*, Mat& hsvImg, Mat& hsvThresImg, Mat& YCrCb*/) {
 
-	// 有兩種方式可以進行顏色區段篩選
+	// 用了兩種channel來進行顏色區段篩選
 	// 1. HSV膚色範圍: 0 < H < 50； 0.23 < S < 0.68
-	// HSV在面對強光時好像會讀不太到?
+	// HSV在面對強光時好像會讀不太到? -> 打算用YCrCb channel補強
 	Mat hsv_img, hsv_skin_threshold_img;
 	cvtColor(inputFrame, hsv_img, COLOR_BGR2HSV);
-	inRange(hsv_img, Scalar(0, 58, 40), Scalar(35, 174, 255), hsv_skin_threshold_img);
-	// morphology
+	inRange(hsv_img, 
+		Scalar(H_MIN_val, S_MIN_val, V_MIN_val), 
+		Scalar(H_MAX_val, S_MAX_val, V_MAX_val), 
+		hsv_skin_threshold_img);
+	// morphology(open運算 = erode運算 + dilate運算)
 	morphologyEx(hsv_skin_threshold_img, hsv_skin_threshold_img, CV_MOP_OPEN, Mat());
 	imshow("HSV", hsv_img);
 	imshow("HSV Skin Threshold", hsv_skin_threshold_img);
 
-	// 2. YCrCb膚色範圍: 135 < Cr < 180； 85 < Cb < 135； Y>80
+	// 2. YCrCb膚色範圍: 135 < Cr < 180； 85 < Cb < 135； Y > 80
 	Mat ycrcb_img, ycrcb_skin_threshold_img;
 	cvtColor(inputFrame, ycrcb_img, COLOR_BGR2YCrCb);
-	inRange(ycrcb_img, Scalar(80, 135, 85), Scalar(255, 180, 135), ycrcb_skin_threshold_img);
+	inRange(ycrcb_img, Scalar(80, 80, 85), Scalar(255, 180, 135), ycrcb_skin_threshold_img);
 	// morphology
 	morphologyEx(ycrcb_skin_threshold_img, ycrcb_skin_threshold_img, CV_MOP_OPEN, Mat());
-
 	imshow("YCrCb", ycrcb_img);
 	imshow("YCrCb Skin Threshold", ycrcb_skin_threshold_img);
 
 	// 兩種方法取交集
 	Mat resultSkinBin;
 	bitwise_and(hsv_skin_threshold_img, ycrcb_skin_threshold_img, resultSkinBin);
-	// Morphology(open運算 = erode運算 + dilate運算)
+	// Morphology
 	morphologyEx(resultSkinBin, resultSkinBin, CV_MOP_OPEN, Mat());
 	morphologyEx(resultSkinBin, resultSkinBin, CV_MOP_DILATE, Mat());
 
@@ -338,22 +309,6 @@ void extractSkinArea(const Mat& inputFrame, Mat& outputFrame) {
 
 	// Show the results:
 	// imshow("Result", resultSkinBin);
-	// convert frame from BGR to HSV colorspace
-
-	//// Old version
-	//Mat HSVFrame;
-	//Mat thresholdFrame;
-	//cvtColor(inputFrame, HSVFrame, COLOR_BGR2HSV);
-	//// 對HSVFrame進行顏色區段篩選
-	//inRange(HSVFrame, Scalar(H_MIN_val, S_MIN_val, V_MIN_val), Scalar(H_MAX_val, S_MAX_val, V_MAX_val), thresholdFrame);
-	//int blurSize = 5;
-	//int elementSize = 5;
-	//medianBlur(thresholdFrame, thresholdFrame, blurSize);
-	//// morphology
-	//morphologyEx(thresholdFrame, thresholdFrame, CV_MOP_OPEN, Mat());
-
-	//imshow(HSVWindowName, HSVFrame);
-	//outputFrame = thresholdFrame.clone();
 }
 
 int main() {
@@ -363,15 +318,13 @@ int main() {
 	
 	// 開檔，用來寫入手勢的點數
 	outputfile.open("data.txt");
-	//create slider bars for HSV filtering
-	// 這個是一開始用來測試數值用的，現在已經有找到不錯的數據所以暫時用不到了
-	// createTrackbars();
+	// create slider bars for HSV filtering(這個是一開始用來測試HSV filter的數值用的，現在已經有找到不錯的數據所以暫時用不到了)
+	createTrackbars();
 
-	// load(a); -> 這行的作用是....? 好像是用machine learning的方式來進行物體辨識(需載入xml檔)
 	openCam(camera);	// 打開照相機
 
-	// 產生去背景物件
-	MOG2 = createBackgroundSubtractorMOG2(600, 64, false);
+	// 產生去背景物件(history, varThreshold, detectShadows)
+	MOG2 = createBackgroundSubtractorMOG2(2000, 64, true);
 
 	// Infinite loop to acquire video frame continuously
 	while (true)
@@ -387,28 +340,34 @@ int main() {
 		/* 想法: 
 			1. 色彩辨識: Origin frame轉HSV，然後HSV再經過filter(inRange)選取接近皮膚的顏色，然後轉binary
 			2. 形狀辨識(background subtraction): 用演算法判斷背景與主體，將背景去掉只留下主體的binary
-			運用上面兩者所產生的threshold取交集來留下手的部分(不過目前還是會連同臉一起讀進去...)
-		(原本是想用機器學習(haar cascade)來辨識，不過訓練失敗...，而且用內建的臉部辨識跑過，很耗CPU資源，暫不考慮)
-		
+			運用上面兩者所產生的threshold取交集來留下皮膚色的部分，然後再與background subtraction取交集。
+			得到的結果再根據形狀去判斷手勢。(不過目前還有一些問題，例如會連同臉一起讀進去...)
+			(原本是想用機器學習(haar cascade)來辨識，不過訓練失敗...
+			而且用內建的臉部辨識跑過，也上網查過資料，發現haar cascade很耗CPU資源，暫不考慮)
+		流程:
+			->color extraction
+			->background subtraction
+			->threshold matrix
+			->contour detection
+			->convex hull
 		*/
 
 		// 1. Background Subtraction: Use MOG2 approach
 		Mat Mog_Mask_morpho_threshold;
 		backgroundSubtraction(frame, Mog_Mask_morpho_threshold);
-		imshow("Morpho Threshold", Mog_Mask_morpho_threshold);
+		imshow("MOG2 Morpho Threshold", Mog_Mask_morpho_threshold);
 
 		// 2. 色彩辨識法: 運用辨識皮膚顏色的方式來產生threshold
-		// 影像的轉換(->HSV->threshold matrix->contour detection->convex hull)，方便辨識
 		Mat thresholdFrame;
 		extractSkinArea(frame, thresholdFrame);
 		imshow("Color Method Threshold", thresholdFrame);
 
-		// 最後將兩者結果取交集
+		// 最後將兩者結果取交集(聯集?)
 		Mat combinedThreshold;
 		combinedThreshold = thresholdFrame.clone();
 		// bitwise_not(Mog_Mask_morpho_threshold, Mog_Mask_morpho_threshold);
-		bitwise_or(Mog_Mask_morpho_threshold, thresholdFrame, combinedThreshold);
-		morphologyEx(combinedThreshold, combinedThreshold, CV_MOP_DILATE, Mat());
+		bitwise_and(Mog_Mask_morpho_threshold, thresholdFrame, combinedThreshold);
+		morphologyEx(combinedThreshold, combinedThreshold, CV_MOP_OPEN, Mat());
 		imshow("Combined Threshold", combinedThreshold);
 
 		// 接下來要將手的部位標示出來
@@ -464,7 +423,7 @@ int main() {
 		}
 
 		// 最後秀出處理的結果
-		imshow(cameraWindowName, frame);
+		imshow("Result", frame);
 
 		//// Use morph (erode and dilate the thresholdFrame)
 		//morphOps(thresholdFrame);
