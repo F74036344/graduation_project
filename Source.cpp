@@ -1,5 +1,5 @@
-#include <iostream>
-// include commonly used
+
+// include opencv lib
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -8,38 +8,45 @@
 #include <opencv/highgui.h>
 #include <opencv/cv.h>
 
-// For outputing to debu window
+// For outputing to debug window
 #include <windows.h>
 #include <tchar.h>
 
+// General C/C++ lib
+#include <iostream>
 #include <fstream>	// For outputing file
-#include <sstream>	// Uh...
+#include <sstream>
 #include <string>
+#include <climits>
+
 
 
 using namespace std;
 using namespace cv;
 
-//initial min and max HSV filter values.
-//these will be changed using trackbars
+// Initial min and max HSV filter values.
+// These could be changed by using trackbars
 const int H_MIN = 0, H_MAX = 255;
 const int S_MIN = 0, S_MAX = 255;
 const int V_MIN = 0, V_MAX = 255;
-//根據網路上查到的HSV膚色範圍: 0 < H < 50； 0.23 < S < 0.68 (跟Hue有較大的關係)
-//int H_MIN_val = 0;
-//int H_MAX_val = 70;
-//int S_MIN_val = 58;
-//int S_MAX_val = 174;
-//int V_MIN_val = 40;
-//int V_MAX_val = 255;
+
+// 用來存trackbar的初始HSV值的var 
 int H_MIN_val = 0;
 int H_MAX_val = 70;
-int S_MIN_val = 0;
-int S_MAX_val = 231;
+int S_MIN_val = 58;
+int S_MAX_val = 174;
 int V_MIN_val = 40;
 int V_MAX_val = 255;
 
+//int H_MIN_val = 0;
+//int H_MAX_val = 70;
+//int S_MIN_val = 0;
+//int S_MAX_val = 231;
+//int V_MIN_val = 40;
+//int V_MAX_val = 255;
+
 int msPerFrame = 30;
+
 // 12,74,14,95,132,202
 //default capture width and height
 const int FRAME_WIDTH = 640;
@@ -50,16 +57,13 @@ const int MAX_NUM_OBJECTS = 50;
 const int MIN_OBJECT_AREA = 15 * 15;
 const int MAX_OBJECT_AREA = FRAME_HEIGHT*FRAME_WIDTH / 1.5;
 
-// 用來output點數的output file
-ofstream outputfile;
-
 // 用來進行去背處理的variable(定義在global，以讓function存取)
 Ptr<BackgroundSubtractorMOG2> MOG2;
 
 
 void openCam(VideoCapture &camera)
 {
-	camera.open(0);
+	camera.open(0);	// Opencv的imread或VideoCapture物件會以"BGR"的方式儲存，而非RGB
 	if (!camera.isOpened())
 	{
 		std::cout << "Camera CANNOT open";
@@ -76,16 +80,17 @@ void exitProgram() {
 	exit(EXIT_SUCCESS);
 }
 
-// What does this function do @@?
 void on_trackbar(int, void*)
-{//This function gets called whenever a
- // trackbar position is changed
-	// So does this function do nothing?
+{
+	//This function gets called whenever a
+	// trackbar position is changed
+	// 在trackbar移動的時候沒有任何需要做的事情，所以留空
 }
 
 void createTrackbars() {
-	//create window for trackbars
+	// 產生用來測試用的視窗
 
+	// 為視窗命名一個名稱
 	const string trackbarWindowName = "Trackbar Window";
 	namedWindow(trackbarWindowName, 0);
 	//create memory to store trackbar name on window
@@ -96,6 +101,7 @@ void createTrackbars() {
 	//sprintf(TrackbarName, "S_MAX");
 	//sprintf(TrackbarName, "V_MIN");
 	//sprintf(TrackbarName, "V_MAX");
+
 	//create trackbars and insert them into window
 	//3 parameters are: the address of the variable that is changing when the trackbar is moved(eg.H_LOW),
 	//the max value the trackbar can move (eg. H_HIGH), 
@@ -155,6 +161,7 @@ void morphOps(Mat &thresh) {
 	dilate(thresh, thresh, dilateElement);
 }
 
+// 
 void trackFilteredObject(int &x, int &y, Mat threshold, Mat &cameraFeed) {
 
 	Mat temp;
@@ -239,76 +246,79 @@ float innerAngle(float px1, float py1, float px2, float py2, float cx1, float cy
 }
 
 void backgroundSubtraction(const Mat& inputFrame, Mat& outputFrame) {
-	// 1. 形狀辨識(background subtraction)
-	// 先對所讀取到的影像進行去背處理
+	// 1. 先對所讀取到的影像進行去背處理
 	Mat RoiFrame;
 	Mat Mog_Mask, Mog_Mask_morpho, Mog_Mask_morpho_threshold;
 	Mat backImg;
 
 	blur(inputFrame, RoiFrame, Size(3, 3));
-	//GaussianBlur(frame, RoiFrame, Size(9, 9), 0, 0);
+	// GaussianBlur(frame, RoiFrame, Size(9, 9), 0, 0);
 	// Rect roi(100, 100, 300, 300);
-	//RoiFrame = frame(roi);
-
-	//Mog processing
+	// RoiFrame = frame(roi);
+	// 
+	// Mog processing
 	MOG2->apply(RoiFrame, Mog_Mask);
 
-	//Background Image get
+	// Background Image get
 	MOG2->getBackgroundImage(backImg);
 
 	Mat element = getStructuringElement(MORPH_RECT, Size(5, 5), Point(4, 4));
-	//morphology: 對Mog_Mask進行運算(CV_MOP_OPEN: erode侵蝕+dilate膨脹 )
+	// morphology: 對Mog_Mask進行運算(CV_MOP_OPEN: erode侵蝕+dilate膨脹 )
 	morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_OPEN, Mat());
 	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_ERODE, Mat());
 	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_ERODE, Mat());
 	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_DILATE, Mat(), Point(-1,-1), 7);
 
-	//Binary: 尚須確認這在做什麼...
+	// Binary: 尚須確認這在做什麼...
 	threshold(Mog_Mask_morpho, Mog_Mask_morpho_threshold, 10, 255, CV_THRESH_BINARY);
 
-	//imshow("ROI", RoiFrame);
-	imshow("MogMask", Mog_Mask);
-	imshow("BackImg", backImg);
+	// imshow("ROI", RoiFrame);
+	// imshow("MogMask", Mog_Mask);
+	imshow("背景圖", backImg);
 	outputFrame = Mog_Mask_morpho_threshold.clone();
 
 }
 
-void extractSkinArea(const Mat& inputFrame, Mat& outputFrame/*, Mat& hsvImg, Mat& hsvThresImg, Mat& YCrCb*/) {
+void extractFireArea(const Mat& inputFrame, Mat& outputFrame/*, Mat& hsvImg, Mat& hsvThresImg, Mat& YCrCb*/) {
 
-	// 用了兩種channel來進行顏色區段篩選
-	// 1. HSV膚色範圍: 0 < H < 50； 0.23 < S < 0.68
-	// HSV在面對強光時好像會讀不太到? -> 打算用YCrCb channel補強
-	Mat hsv_img, hsv_skin_threshold_img;
-	cvtColor(inputFrame, hsv_img, COLOR_BGR2HSV);
-	inRange(hsv_img, 
-		Scalar(H_MIN_val, S_MIN_val, V_MIN_val), 
-		Scalar(H_MAX_val, S_MAX_val, V_MAX_val), 
-		hsv_skin_threshold_img);
-	// morphology(open運算 = erode運算 + dilate運算)
-	morphologyEx(hsv_skin_threshold_img, hsv_skin_threshold_img, CV_MOP_OPEN, Mat());
-	imshow("HSV", hsv_img);
-	imshow("HSV Skin Threshold", hsv_skin_threshold_img);
 
-	// 2. YCrCb膚色範圍: 135 < Cr < 180； 85 < Cb < 135； Y > 80
-	Mat ycrcb_img, ycrcb_skin_threshold_img;
-	cvtColor(inputFrame, ycrcb_img, COLOR_BGR2YCrCb);
-	inRange(ycrcb_img, Scalar(80, 80, 85), Scalar(255, 180, 135), ycrcb_skin_threshold_img);
+	// 使用YCrCb來提取火焰像素(Y: 流明;灰階值；Cr: 紅色偏移量; Cb: 藍色偏移量)
+	Mat inputFrame_YCrCb, fire_YCrCb_threshold, resultFireBin;
+	Mat tempThres(inputFrame.rows, inputFrame.cols, CV_8U);
+	// 首先，將輸入的影像從BGR轉成YCrCb
+	cvtColor(inputFrame, inputFrame_YCrCb, COLOR_BGR2YCrCb);
+
+	// **然後根據條件，將火焰像素提取出來
+	// 使用OpenCV為Mat提供的迭代器(與STL迭代器兼容)，速度較與用at取值來的快
+	Mat_<Vec3b>::iterator it = inputFrame_YCrCb.begin<Vec3b>();
+	Mat_<Vec3b>::iterator it_end = inputFrame_YCrCb.end<Vec3b>();
+	Mat_<uchar>::iterator it2 = tempThres.begin<uchar>();
+	Mat_<uchar>::iterator it2_end = tempThres.end<uchar>();
+	for (; it != it_end; it++, it2++) {
+		// channel number: Y:0, Cr:1, Cb:2 
+		// if Y > Cb && Cr > Cb，則判定為火焰像素
+		if ((*it)[0] > (*it)[2] && (*it)[1] > (*it)[2]) {
+			(*it2) = UCHAR_MAX;	// 火焰像素 -> 設為白色
+		}
+		else {
+			(*it2) = 0;	// 非火焰像素 -> 設為黑色
+		}
+	}
+
+	// inRange(inputFrame_YCrCb, Scalar(80, 80, 85), Scalar(255, 180, 135), fire_YCrCb_threshold);
 	// morphology
-	morphologyEx(ycrcb_skin_threshold_img, ycrcb_skin_threshold_img, CV_MOP_OPEN, Mat());
-	imshow("YCrCb", ycrcb_img);
-	imshow("YCrCb Skin Threshold", ycrcb_skin_threshold_img);
+	// morphologyEx(fire_YCrCb_threshold, fire_YCrCb_threshold, CV_MOP_OPEN, Mat());
+	// 顯示inputFrame_YCrCb(debug用)
+	imshow("YCrCb", inputFrame_YCrCb);
 
-	// 兩種方法取交集
-	Mat resultSkinBin;
-	bitwise_and(hsv_skin_threshold_img, ycrcb_skin_threshold_img, resultSkinBin);
 	// Morphology
-	morphologyEx(resultSkinBin, resultSkinBin, CV_MOP_OPEN, Mat());
-	morphologyEx(resultSkinBin, resultSkinBin, CV_MOP_DILATE, Mat());
+	//morphologyEx(tempThres, resultFireBin, CV_MOP_OPEN, Mat());
+	//morphologyEx(resultFireBin, resultFireBin, CV_MOP_DILATE, Mat());
 
-	outputFrame = resultSkinBin.clone();
+	outputFrame = tempThres.clone();
 
 	// Show the results:
-	// imshow("Result", resultSkinBin);
+	// imshow("Result", resultFireBin);
 }
 
 int main() {
@@ -316,10 +326,8 @@ int main() {
 	VideoCapture camera;
 	Mat frame;
 	
-	// 開檔，用來寫入手勢的點數
-	outputfile.open("data.txt");
 	// create slider bars for HSV filtering(這個是一開始用來測試HSV filter的數值用的，現在已經有找到不錯的數據所以暫時用不到了)
-	createTrackbars();
+	// createTrackbars();
 
 	openCam(camera);	// 打開照相機
 
@@ -352,25 +360,26 @@ int main() {
 			->convex hull
 		*/
 
-		// 1. Background Subtraction: Use MOG2 approach
+		// 1. Background Subtraction: Use MOG2 approach(MOG2: 一種基於"混和高斯模型"的演算法)
+		// 先進行去背景處理(靜止很久的物件會被歸類為背景)
 		Mat Mog_Mask_morpho_threshold;
-		backgroundSubtraction(frame, Mog_Mask_morpho_threshold);
-		imshow("MOG2 Morpho Threshold", Mog_Mask_morpho_threshold);
+		backgroundSubtraction(frame, Mog_Mask_morpho_threshold);	// 出來的影像會是二值圖
+		imshow("經過MOG2去背景處理後的影像", Mog_Mask_morpho_threshold);
 
-		// 2. 色彩辨識法: 運用辨識皮膚顏色的方式來產生threshold
+		// 2. 色彩辨識法: 運用辨識火焰顏色的方式來產生threshold
 		Mat thresholdFrame;
-		extractSkinArea(frame, thresholdFrame);
-		imshow("Color Method Threshold", thresholdFrame);
+		extractFireArea(frame, thresholdFrame);	// 出來的影像會是二值圖
+		imshow("Fire Area Extracted", thresholdFrame);
 
-		// 最後將兩者結果取交集(聯集?)
+		// 最後將兩者結果取交集
 		Mat combinedThreshold;
 		combinedThreshold = thresholdFrame.clone();
 		// bitwise_not(Mog_Mask_morpho_threshold, Mog_Mask_morpho_threshold);
 		bitwise_and(Mog_Mask_morpho_threshold, thresholdFrame, combinedThreshold);
-		morphologyEx(combinedThreshold, combinedThreshold, CV_MOP_OPEN, Mat());
+		morphologyEx(combinedThreshold, combinedThreshold, CV_MOP_OPEN, Mat());	// 進行開運算
 		imshow("Combined Threshold", combinedThreshold);
 
-		// 接下來要將手的部位標示出來
+		// 接下來要將火焰的部分用紅框標示出來
 		// Contour detection(red edge)
 		Mat edges;
 		vector<vector<Point> > contours;
@@ -385,42 +394,38 @@ int main() {
 		drawContours(frame, contours, largestContour, cv::Scalar(0, 0, 255), 1);
 
 		// Convex hull(convex-set edge)
-		if (!contours.empty()) {
-			std::vector<std::vector<cv::Point> > hull(1);
-			cv::convexHull(cv::Mat(contours[largestContour]), hull[0], false);
-			cv::drawContours(frame, hull, 0, cv::Scalar(255, 130, 30), 3);
-			// 根據convex set與contour之間的空隙來畫出convex defect(是這樣子稱呼嗎@@?)
-			if (hull[0].size() > 2) {
-				std::vector<int> hullIndexes;
-				cv::convexHull(cv::Mat(contours[largestContour]), hullIndexes, true);
-				std::vector<cv::Vec4i> convexityDefects;
-				cv::convexityDefects(cv::Mat(contours[largestContour]), hullIndexes, convexityDefects);
-				cv::Rect boundingBox = cv::boundingRect(hull[0]);
-				cv::rectangle(frame, boundingBox, cv::Scalar(255, 0, 0));
-				cv::Point center = cv::Point(boundingBox.x + boundingBox.width / 2, boundingBox.y + boundingBox.height / 2);
-				std::vector<cv::Point> validPoints;
-				for (size_t i = 0; i < convexityDefects.size(); i++)
-				{
-					cv::Point p1 = contours[largestContour][convexityDefects[i][0]];
-					cv::Point p2 = contours[largestContour][convexityDefects[i][1]];
-					cv::Point p3 = contours[largestContour][convexityDefects[i][2]];
-					double angle = std::atan2(center.y - p1.y, center.x - p1.x) * 180 / CV_PI;
-					double inAngle = innerAngle(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
-					double length = std::sqrt(std::pow(p1.x - p3.x, 2) + std::pow(p1.y - p3.y, 2));
-					if (angle > -30 && angle < 160 && std::abs(inAngle) > 20 && std::abs(inAngle) < 120 && length > 0.1 * boundingBox.height) {
-						validPoints.push_back(p1);
-					}
-				}
-				for (size_t i = 0; i < validPoints.size(); i++) {
-					cv::circle(frame, validPoints[i], 10, cv::Scalar(255, 130, 30), 2);
-				}
-				// 將valid point寫入outputfile
-				outputfile << validPoints.size() << " ";
-				// 將valid point的數量print到frame影像上
-				putText(frame, format("%d", validPoints.size()), Point(50, 50), 1, 4, Scalar(0, 0, 255), 2);
-
-			}
-		}
+		//if (!contours.empty()) {
+		//	std::vector<std::vector<cv::Point> > hull(1);
+		//	cv::convexHull(cv::Mat(contours[largestContour]), hull[0], false);
+		//	cv::drawContours(frame, hull, 0, cv::Scalar(255, 130, 30), 3);
+		//	// 根據convex set與contour之間的空隙來畫出convex defect(是這樣子稱呼嗎@@?)
+		//	if (hull[0].size() > 2) {
+		//		std::vector<int> hullIndexes;
+		//		cv::convexHull(cv::Mat(contours[largestContour]), hullIndexes, true);
+		//		std::vector<cv::Vec4i> convexityDefects;
+		//		cv::convexityDefects(cv::Mat(contours[largestContour]), hullIndexes, convexityDefects);
+		//		cv::Rect boundingBox = cv::boundingRect(hull[0]);
+		//		cv::rectangle(frame, boundingBox, cv::Scalar(255, 0, 0));
+		//		cv::Point center = cv::Point(boundingBox.x + boundingBox.width / 2, boundingBox.y + boundingBox.height / 2);
+		//		std::vector<cv::Point> validPoints;
+		//		for (size_t i = 0; i < convexityDefects.size(); i++)
+		//		{
+		//			cv::Point p1 = contours[largestContour][convexityDefects[i][0]];
+		//			cv::Point p2 = contours[largestContour][convexityDefects[i][1]];
+		//			cv::Point p3 = contours[largestContour][convexityDefects[i][2]];
+		//			double angle = std::atan2(center.y - p1.y, center.x - p1.x) * 180 / CV_PI;
+		//			double inAngle = innerAngle(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+		//			double length = std::sqrt(std::pow(p1.x - p3.x, 2) + std::pow(p1.y - p3.y, 2));
+		//			if (angle > -30 && angle < 160 && std::abs(inAngle) > 20 && std::abs(inAngle) < 120 && length > 0.1 * boundingBox.height) {
+		//				validPoints.push_back(p1);
+		//			}
+		//		}
+		//		for (size_t i = 0; i < validPoints.size(); i++) {
+		//			cv::circle(frame, validPoints[i], 10, cv::Scalar(255, 130, 30), 2);
+		//		}
+		//		
+		//	}
+		//}
 
 		// 最後秀出處理的結果
 		imshow("Result", frame);

@@ -8,15 +8,14 @@ c:\opencv\build\include\opencv2\imgproc.hpp : warning C4819: The file contains a
 c:\opencv\build\include\opencv2\imgproc.hpp(592): warning C4819: The file contains a character that cannot be represented in the current code page (950). Save the file in Unicode format to prevent data loss
 c:\opencv\build\include\opencv2\stitching\detail\motion_estimators.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (950). Save the file in Unicode format to prevent data loss
 c:\opencv\build\include\opencv2\video\tracking.hpp(532): warning C4819: The file contains a character that cannot be represented in the current code page (950). Save the file in Unicode format to prevent data loss
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(46): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(46): warning C4244: 'initializing': conversion from 'double' to 'const int', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(51): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(51): warning C4244: 'initializing': conversion from 'double' to 'const int', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(171): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(184): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(185): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(237): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(385): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
-c:\users\yckuo\desktop\成\大三下\專題\opencv_project\opencv_project\source.cpp(408): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-  opencv_project.vcxproj -> C:\Users\yckuo\Desktop\成\大三下\專題\opencv_project\x64\Debug\opencv_project.exe
-  opencv_project.vcxproj -> C:\Users\yckuo\Desktop\成\大三下\專題\opencv_project\x64\Debug\opencv_project.pdb (Partial PDB)
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(53): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(53): warning C4244: 'initializing': conversion from 'double' to 'const int', possible loss of data
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(58): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(58): warning C4244: 'initializing': conversion from 'double' to 'const int', possible loss of data
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(178): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(191): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(192): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(244): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+c:\users\yckuo\desktop\成\畢業專題\code\fire_recognition_v2_opencv\opencv_project\source.cpp(394): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+  opencv_project.vcxproj -> C:\Users\yckuo\Desktop\成\畢業專題\code\Fire_recognition_v2_opencv\x64\Debug\opencv_project.exe
+  opencv_project.vcxproj -> C:\Users\yckuo\Desktop\成\畢業專題\code\Fire_recognition_v2_opencv\x64\Debug\opencv_project.pdb (Partial PDB)
