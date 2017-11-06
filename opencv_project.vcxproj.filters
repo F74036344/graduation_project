@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Source.cpp">
+    <ClCompile Include="Fire_recog.cpp">
       <Filter>原始程式檔</Filter>
     </ClCompile>
   </ItemGroup>

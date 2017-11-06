@@ -1,3 +1,4 @@
+// version: 17.11.6
 
 // include opencv lib
 #include <opencv2/opencv.hpp>
@@ -20,9 +21,12 @@
 #include <climits>
 
 
-
 using namespace std;
 using namespace cv;
+
+
+// Video to test
+const string videoName = "sunrise.mp4";
 
 // Initial min and max HSV filter values.
 // These could be changed by using trackbars
@@ -63,7 +67,8 @@ Ptr<BackgroundSubtractorMOG2> MOG2;
 
 void openCam(VideoCapture &camera)
 {
-	camera.open(0);	// Opencv的imread或VideoCapture物件會以"BGR"的方式儲存，而非RGB
+	// camera.open( "filepath" );
+	camera.open( "../test_case/fire1.mp4" );	// Opencv的imread或VideoCapture物件會以"BGR"的方式儲存，而非RGB
 	if (!camera.isOpened())
 	{
 		std::cout << "Camera CANNOT open";
@@ -246,7 +251,7 @@ float innerAngle(float px1, float py1, float px2, float py2, float cx1, float cy
 }
 
 void backgroundSubtraction(const Mat& inputFrame, Mat& outputFrame) {
-	// 1. 先對所讀取到的影像進行去背處理
+	// 對input影像進行去背處理
 	Mat RoiFrame;
 	Mat Mog_Mask, Mog_Mask_morpho, Mog_Mask_morpho_threshold;
 	Mat backImg;
@@ -265,9 +270,9 @@ void backgroundSubtraction(const Mat& inputFrame, Mat& outputFrame) {
 	Mat element = getStructuringElement(MORPH_RECT, Size(5, 5), Point(4, 4));
 	// morphology: 對Mog_Mask進行運算(CV_MOP_OPEN: erode侵蝕+dilate膨脹 )
 	morphologyEx(Mog_Mask, Mog_Mask_morpho, CV_MOP_OPEN, Mat());
-	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_ERODE, Mat());
-	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_ERODE, Mat());
-	morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_DILATE, Mat(), Point(-1,-1), 7);
+	//morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_ERODE, Mat());
+	//morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_ERODE, Mat());
+	//morphologyEx(Mog_Mask_morpho, Mog_Mask_morpho, CV_MOP_DILATE, Mat(), Point(-1,-1), 7);
 
 	// Binary: 尚須確認這在做什麼...
 	threshold(Mog_Mask_morpho, Mog_Mask_morpho_threshold, 10, 255, CV_THRESH_BINARY);
@@ -281,29 +286,90 @@ void backgroundSubtraction(const Mat& inputFrame, Mat& outputFrame) {
 
 void extractFireArea(const Mat& inputFrame, Mat& outputFrame/*, Mat& hsvImg, Mat& hsvThresImg, Mat& YCrCb*/) {
 
+	// inputFrame為 BGR channel
 
-	// 使用YCrCb來提取火焰像素(Y: 流明;灰階值；Cr: 紅色偏移量; Cb: 藍色偏移量)
+	// 使用YCrCb channel來協助提取火焰像素(Y: 流明;灰階值；Cr: 紅色偏移量; Cb: 藍色偏移量)
 	Mat inputFrame_YCrCb, fire_YCrCb_threshold, resultFireBin;
 	Mat tempThres(inputFrame.rows, inputFrame.cols, CV_8U);
-	// 首先，將輸入的影像從BGR轉成YCrCb
+	// 首先，將輸入的影像從BGR轉成YCrCb，然後另外存在inputFrame_YCrCb
 	cvtColor(inputFrame, inputFrame_YCrCb, COLOR_BGR2YCrCb);
 
 	// **然後根據條件，將火焰像素提取出來
-	// 使用OpenCV為Mat提供的迭代器(與STL迭代器兼容)，速度較與用at取值來的快
-	Mat_<Vec3b>::iterator it = inputFrame_YCrCb.begin<Vec3b>();
-	Mat_<Vec3b>::iterator it_end = inputFrame_YCrCb.end<Vec3b>();
-	Mat_<uchar>::iterator it2 = tempThres.begin<uchar>();
-	Mat_<uchar>::iterator it2_end = tempThres.end<uchar>();
-	for (; it != it_end; it++, it2++) {
-		// channel number: Y:0, Cr:1, Cb:2 
-		// if Y > Cb && Cr > Cb，則判定為火焰像素
-		if ((*it)[0] > (*it)[2] && (*it)[1] > (*it)[2]) {
-			(*it2) = UCHAR_MAX;	// 火焰像素 -> 設為白色
-		}
-		else {
-			(*it2) = 0;	// 非火焰像素 -> 設為黑色
+	int pixelAmt = inputFrame.rows * inputFrame.cols;
+	
+	uchar *pxptr_BGR, *pxptr_YCrCb, *pxptr_temp;
+	// 走訪每一個pixel，並檢驗每個pixel是否有符合條件，有則判定為火焰像素
+	// 先算出mean值
+	float b_mean = 0, g_mean = 0, r_mean = 0;
+	float y_mean = 0, cr_mean = 0, cb_mean = 0;
+
+	for (int i = 0; i < inputFrame.rows; i++) {
+		pxptr_YCrCb = (uchar*)inputFrame_YCrCb.ptr<uchar>(i); // Point to first pixel in the row of YCrCb frame
+		pxptr_BGR = (uchar*)inputFrame.ptr<uchar>(i);
+
+		for (int j = 0; j < inputFrame.cols; j++) {
+			b_mean += *pxptr_BGR;	*pxptr_BGR++;
+			g_mean += *pxptr_BGR;	*pxptr_BGR++;
+			r_mean += *pxptr_BGR;	*pxptr_BGR++;
+			y_mean += *pxptr_YCrCb;		*pxptr_YCrCb++;
+			cr_mean += *pxptr_YCrCb;	*pxptr_YCrCb++;
+			cb_mean += *pxptr_YCrCb;	*pxptr_YCrCb++;
+
 		}
 	}
+	b_mean /= pixelAmt;
+	g_mean /= pixelAmt;
+	r_mean /= pixelAmt;
+	y_mean /= pixelAmt;
+	cr_mean /= pixelAmt;
+	cb_mean /= pixelAmt;
+
+	for (int i = 0; i < inputFrame.rows; i++) {
+		pxptr_YCrCb = (uchar*)inputFrame_YCrCb.ptr<uchar>(i); // Point to first pixel in the row of YCrCb frame
+		pxptr_BGR = (uchar*)inputFrame.ptr<uchar>(i);
+		pxptr_temp = (uchar*)tempThres.ptr<uchar>(i); // Point to first pixel in the row of tempThres frame
+
+		for (int j = 0; j < inputFrame.cols; j++) {
+			uchar b = *pxptr_BGR++;
+			uchar g = *pxptr_BGR++;
+			uchar r = *pxptr_BGR++;
+			uchar y = *pxptr_YCrCb++;
+			uchar cr = *pxptr_YCrCb++;
+			uchar cb = *pxptr_YCrCb++;
+
+
+			if ( (y >= cb && cr >= cb) // 根據"2012_07_18_大本論文_廖翌涵_圖書館"的條件
+				 && ( y >= y_mean && cr >= cr_mean && cb <= cb_mean ) 
+				 && ( r >= g && g >= b )
+					&& ( r >= r_mean && g >= g_mean && b >= b_mean)
+				) {	// 根據jeans_1115_..
+				*pxptr_temp = UCHAR_MAX;	// 設為白色
+			}
+			else {	// Not fire pixel
+				*pxptr_temp = 0;	// 設為黑色
+			}
+			pxptr_temp++;
+		}
+	}
+
+
+
+
+	//// 使用OpenCV為Mat提供的迭代器(與STL迭代器兼容)，速度較與用at取值來的快
+	//Mat_<Vec3b>::iterator it = inputFrame_YCrCb.begin<Vec3b>();
+	//Mat_<Vec3b>::iterator it_end = inputFrame_YCrCb.end<Vec3b>();
+	//Mat_<uchar>::iterator it2 = tempThres.begin<uchar>();
+	//Mat_<uchar>::iterator it2_end = tempThres.end<uchar>();
+	//for (; it != it_end; it++, it2++) {
+	//	// channel number: Y:0, Cr:1, Cb:2 
+	//	// if Y > Cb && Cr > Cb，則判定為火焰像素
+	//	if ((*it)[0] > (*it)[2] && (*it)[1] > (*it)[2]) {
+	//		(*it2) = UCHAR_MAX;	// 火焰像素 -> 設為白色
+	//	}
+	//	else {
+	//		(*it2) = 0;	// 非火焰像素 -> 設為黑色
+	//	}
+	//}
 
 	// inRange(inputFrame_YCrCb, Scalar(80, 80, 85), Scalar(255, 180, 135), fire_YCrCb_threshold);
 	// morphology
@@ -332,7 +398,7 @@ int main() {
 	openCam(camera);	// 打開照相機
 
 	// 產生去背景物件(history, varThreshold, detectShadows)
-	MOG2 = createBackgroundSubtractorMOG2(2000, 64, true);
+	MOG2 = createBackgroundSubtractorMOG2(20000, 64, true);
 
 	// Infinite loop to acquire video frame continuously
 	while (true)
@@ -367,19 +433,18 @@ int main() {
 		imshow("經過MOG2去背景處理後的影像", Mog_Mask_morpho_threshold);
 
 		// 2. 色彩辨識法: 運用辨識火焰顏色的方式來產生threshold
+		// 判斷條件: 根據經驗法則
 		Mat thresholdFrame;
 		extractFireArea(frame, thresholdFrame);	// 出來的影像會是二值圖
-		imshow("Fire Area Extracted", thresholdFrame);
+		imshow("Fire Area Extracted by color method (YCrCb)", thresholdFrame);
 
 		// 最後將兩者結果取交集
-		Mat combinedThreshold;
-		combinedThreshold = thresholdFrame.clone();
-		// bitwise_not(Mog_Mask_morpho_threshold, Mog_Mask_morpho_threshold);
+		Mat combinedThreshold = thresholdFrame.clone();
 		bitwise_and(Mog_Mask_morpho_threshold, thresholdFrame, combinedThreshold);
 		morphologyEx(combinedThreshold, combinedThreshold, CV_MOP_OPEN, Mat());	// 進行開運算
 		imshow("Combined Threshold", combinedThreshold);
 
-		// 接下來要將火焰的部分用紅框標示出來
+		// 得到火焰區塊的二值圖後，接下來要將火焰的部分用線標示出來
 		// Contour detection(red edge)
 		Mat edges;
 		vector<vector<Point> > contours;
@@ -388,10 +453,17 @@ int main() {
 		findContours(combinedThreshold, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
 		size_t largestContour = 0;
 		for (size_t i = 1; i < contours.size(); i++) {
-			if (contourArea(contours[i]) > contourArea(contours[largestContour]))
-				largestContour = i;
+			drawContours(frame, contours, i, cv::Scalar(255, 180, 0), 2);
 		}
-		drawContours(frame, contours, largestContour, cv::Scalar(0, 0, 255), 1);
+
+		// Old code: 只畫出最大的contours
+		//for (size_t i = 1; i < contours.size(); i++) {
+		//	if (contourArea(contours[i]) > contourArea(contours[largestContour]))
+		//		largestContour = i;
+		//}
+		//drawContours(frame, contours, largestContour, cv::Scalar(0, 0, 255), 2);
+
+		//再更進一步的標示出來(不過還不知道這個是如何標示的)
 
 		// Convex hull(convex-set edge)
 		//if (!contours.empty()) {
@@ -437,14 +509,14 @@ int main() {
 
 		//// Show frames
 		//imshow(cameraWindowName, frame);
-		//imshow(HSVWindowName, HSVFrame);
 		//imshow(thresholdWindowName, thresholdFrame);
 
 		// printf("%d\n", cv::waitKey(msPerFrame));
 		if (cv::waitKey(msPerFrame) != 255) {
 			// 如果有輸入任意按鍵 -> 退出
 			exitProgram();			
-		}	
+		}
+
 	}
 
 	return 1;
